@@ -21,10 +21,15 @@ export class MQTTService {
                     this.disconnect();
                 }
 
-                // Build broker URL - simple format
-                const brokerUrl = config.brokerUrl.includes('://')
-                    ? config.brokerUrl
-                    : `mqtt://${config.brokerUrl}`;
+                // Build broker URL - simple format. Enforce WebSockets for React Native
+                let brokerUrl = config.brokerUrl;
+                if (!brokerUrl.includes('://')) {
+                    brokerUrl = `ws://${brokerUrl}`;
+                } else if (brokerUrl.startsWith('mqtt://')) {
+                    brokerUrl = brokerUrl.replace('mqtt://', 'ws://');
+                } else if (brokerUrl.startsWith('mqtts://')) {
+                    brokerUrl = brokerUrl.replace('mqtts://', 'wss://');
+                }
 
                 const fullUrl = `${brokerUrl}:${config.port}`;
 
@@ -56,7 +61,7 @@ export class MQTTService {
                 });
 
                 this.client.on('error', (error) => {
-                    console.error('MQTT connection error:', error);
+                    console.warn('MQTT connection error:', error);
                     if (this.connectionStatusCallback) {
                         this.connectionStatusCallback(false);
                     }
@@ -84,8 +89,8 @@ export class MQTTService {
                 // Timeout if connection doesn't succeed within 10 seconds
                 setTimeout(() => {
                     if (this.client && !this.client.connected) {
-                        const errorMsg = 'MQTT connection timeout. React Native/Expo requires WebSocket (ws:// or wss://). Direct MQTT (mqtt://) is not supported.';
-                        console.error(errorMsg);
+                        const errorMsg = 'MQTT connection timeout. Ensure your broker supports WebSockets on the specified port.';
+                        console.warn(errorMsg);
                         this.disconnect();
                         reject(new Error(errorMsg));
                     }
@@ -102,7 +107,7 @@ export class MQTTService {
                     });
                 });
             } catch (error) {
-                console.error('Error connecting to MQTT:', error);
+                console.warn('Error connecting to MQTT:', error);
                 reject(error);
             }
         });
@@ -134,7 +139,7 @@ export class MQTTService {
 
             this.client.publish(topic, message, { qos: 1 }, (error) => {
                 if (error) {
-                    console.error('Error publishing message:', error);
+                    console.warn('Error publishing message:', error);
                     reject(error);
                 } else {
                     console.log('Message published:', topic, message);
@@ -156,7 +161,7 @@ export class MQTTService {
 
             this.client.subscribe(topic, { qos: 1 }, (error) => {
                 if (error) {
-                    console.error('Error subscribing to topic:', error);
+                    console.warn('Error subscribing to topic:', error);
                     reject(error);
                 } else {
                     console.log('Subscribed to topic:', topic);
@@ -178,7 +183,7 @@ export class MQTTService {
 
             this.client.unsubscribe(topic, (error) => {
                 if (error) {
-                    console.error('Error unsubscribing from topic:', error);
+                    console.warn('Error unsubscribing from topic:', error);
                     reject(error);
                 } else {
                     console.log('Unsubscribed from topic:', topic);

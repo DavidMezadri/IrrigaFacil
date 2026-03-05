@@ -22,7 +22,6 @@ export const SensorFormScreen: React.FC<Props> = ({ navigation, route }) => {
     const [type, setType] = useState<SensorType>(existingSensor?.type || 'humidity');
     const [unit, setUnit] = useState(existingSensor?.unit || '%');
     const [description, setDescription] = useState(existingSensor?.description || '');
-    const [mqttTopic, setMqttTopic] = useState(existingSensor?.mqttTopic || '');
 
     const handleTypeChange = (newType: SensorType) => {
         setType(newType);
@@ -35,7 +34,7 @@ export const SensorFormScreen: React.FC<Props> = ({ navigation, route }) => {
             return;
         }
 
-        if (!name.trim() || !mqttTopic.trim() || !unit.trim()) {
+        if (!name.trim() || !unit.trim()) {
             Alert.alert('Erro', 'Preencha todos os campos obrigatórios');
             return;
         }
@@ -47,7 +46,6 @@ export const SensorFormScreen: React.FC<Props> = ({ navigation, route }) => {
             type,
             unit: unit.trim(),
             description: description.trim() || undefined,
-            mqttTopic: mqttTopic.trim(),
             createdAt: existingSensor?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         };
@@ -108,15 +106,9 @@ export const SensorFormScreen: React.FC<Props> = ({ navigation, route }) => {
                 placeholderTextColor={theme.colors.textMuted}
             />
 
-            <Text style={styles.label}>Tópico MQTT *</Text>
-            <TextInput
-                style={styles.input}
-                value={mqttTopic}
-                onChangeText={setMqttTopic}
-                placeholder="Ex: fazenda1/sensor/umidade/1/dados"
-                placeholderTextColor={theme.colors.textMuted}
-                autoCapitalize="none"
-            />
+            {selectedFarm && (
+                <Text style={styles.topicInfo}>📡 Tópico MQTT da fazenda: {selectedFarm.mqttTopic}</Text>
+            )}
 
             <View style={styles.buttonContainer}>
                 <Button title={isEditing ? 'Salvar' : 'Criar'} onPress={handleSave} />
@@ -171,5 +163,11 @@ const styles = StyleSheet.create({
     },
     cancelButton: {
         marginTop: theme.spacing.md,
+    },
+    topicInfo: {
+        fontSize: theme.fontSize.sm,
+        color: theme.colors.textMuted,
+        marginTop: theme.spacing.lg,
+        fontFamily: 'monospace',
     },
 });

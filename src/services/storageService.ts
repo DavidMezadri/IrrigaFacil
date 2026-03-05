@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Farm, Pump, Sector, Sensor } from '../types';
+import { Farm, Pump, Sector, Sensor, Schedule } from '../types';
 
 const STORAGE_KEYS = {
     FARMS: '@IrrigaFacil:farms',
@@ -7,6 +7,8 @@ const STORAGE_KEYS = {
     SECTORS: '@IrrigaFacil:sectors',
     SENSORS: '@IrrigaFacil:sensors',
     SELECTED_FARM: '@IrrigaFacil:selectedFarm',
+    SCHEDULES: '@IrrigaFacil:schedules',
+    BROKER_CONFIG: '@IrrigaFacil:brokerConfig',
 };
 
 // Farm operations
@@ -121,3 +123,44 @@ export const clearAllData = async (): Promise<void> => {
         throw error;
     }
 };
+
+// Schedule operations
+export const saveSchedules = async (schedules: Schedule[]): Promise<void> => {
+    try {
+        await AsyncStorage.setItem(STORAGE_KEYS.SCHEDULES, JSON.stringify(schedules));
+    } catch (error) {
+        console.error('Error saving schedules:', error);
+        throw error;
+    }
+};
+
+export const loadSchedules = async (): Promise<Schedule[]> => {
+    try {
+        const data = await AsyncStorage.getItem(STORAGE_KEYS.SCHEDULES);
+        return data ? JSON.parse(data) : [];
+    } catch (error) {
+        console.error('Error loading schedules:', error);
+        return [];
+    }
+};
+
+// Broker Config
+export const saveBrokerConfig = async (config: any): Promise<void> => {
+    try {
+        await AsyncStorage.setItem(STORAGE_KEYS.BROKER_CONFIG, JSON.stringify(config));
+    } catch (error) {
+        console.error('Error saving broker config:', error);
+        throw error;
+    }
+};
+
+export const loadBrokerConfig = async (): Promise<any | null> => {
+    try {
+        const data = await AsyncStorage.getItem(STORAGE_KEYS.BROKER_CONFIG);
+        return data ? JSON.parse(data) : null;
+    } catch (error) {
+        console.error('Error loading broker config:', error);
+        return null;
+    }
+};
+

@@ -10,6 +10,7 @@ import { theme } from '../styles/theme';
 // Screens
 import { FarmListScreen } from '../screens/FarmListScreen';
 import { FarmFormScreen } from '../screens/FarmFormScreen';
+import { BrokerConfigScreen } from '../screens/BrokerConfigScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { PumpsScreen } from '../screens/PumpsScreen';
 import { PumpFormScreen } from '../screens/PumpFormScreen';
@@ -17,13 +18,19 @@ import { SectorsScreen } from '../screens/SectorsScreen';
 import { SectorFormScreen } from '../screens/SectorFormScreen';
 import { SensorsScreen } from '../screens/SensorsScreen';
 import { SensorFormScreen } from '../screens/SensorFormScreen';
+import { SchedulesScreen } from '../screens/SchedulesScreen';
+import { ScheduleFormScreen } from '../screens/ScheduleFormScreen';
+import { LogsScreen } from '../screens/LogsScreen';
+import { useApp } from '../context/AppContext';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 // Main tabs for dashboard, pumps, sectors, sensors
 const MainTabs = () => {
+    const { state } = useApp();
     const insets = useSafeAreaInsets();
+    const unreadLogs = state.logEntries.length;
 
     // Base height (60) + safe area inset (or 12 if 0/undefined) + extra padding (8)
     const bottomPadding = insets.bottom > 0 ? insets.bottom : 20;
@@ -89,6 +96,27 @@ const MainTabs = () => {
                     ),
                 }}
             />
+            <Tab.Screen
+                name="Schedules"
+                component={SchedulesScreen as any}
+                options={{
+                    tabBarLabel: 'Schedules',
+                    tabBarIcon: ({ color, size }) => (
+                        <MaterialCommunityIcons name="calendar-clock" size={size} color={color} />
+                    ),
+                }}
+            />
+            <Tab.Screen
+                name="Logs"
+                component={LogsScreen as any}
+                options={{
+                    tabBarLabel: 'Logs',
+                    tabBarIcon: ({ color, size }) => (
+                        <MaterialCommunityIcons name="text-box-multiple-outline" size={size} color={color} />
+                    ),
+                    tabBarBadge: unreadLogs > 0 ? (unreadLogs > 99 ? '99+' : unreadLogs) : undefined,
+                }}
+            />
         </Tab.Navigator>
     );
 };
@@ -122,6 +150,11 @@ export const AppNavigator = () => {
                     options={{ title: 'Fazenda' }}
                 />
                 <Stack.Screen
+                    name="BrokerConfig"
+                    component={BrokerConfigScreen as any}
+                    options={{ title: 'Configuração do Broker' }}
+                />
+                <Stack.Screen
                     name="Main"
                     component={MainTabs}
                     options={{ headerShown: false }}
@@ -140,6 +173,11 @@ export const AppNavigator = () => {
                     name="SensorForm"
                     component={SensorFormScreen as any}
                     options={{ title: 'Sensor' }}
+                />
+                <Stack.Screen
+                    name="ScheduleForm"
+                    component={ScheduleFormScreen as any}
+                    options={{ title: 'Schedule' }}
                 />
             </Stack.Navigator>
         </NavigationContainer>

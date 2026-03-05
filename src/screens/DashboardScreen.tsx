@@ -9,6 +9,7 @@ import { SensorCard } from '../components/SensorCard';
 import { PumpControl } from '../components/PumpControl';
 import { SectorControl } from '../components/SectorControl';
 import { theme } from '../styles/theme';
+import { SyncButton } from '../components/SyncButton';
 
 type RootStackParamList = {
     Dashboard: undefined;
@@ -55,17 +56,20 @@ export const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <View>
+                <View style={styles.headerLeft}>
                     <Text style={styles.farmName}>{selectedFarm.name}</Text>
                     {selectedFarm.location && (
                         <Text style={styles.farmLocation}>📍 {selectedFarm.location}</Text>
                     )}
                 </View>
-                <View style={styles.connectionStatus}>
-                    <StatusIndicator status={isConnected ? 'connected' : 'disconnected'} size={16} />
-                    <Text style={styles.connectionText}>
-                        {isConnected ? 'Conectado' : 'Desconectado'}
-                    </Text>
+                <View style={styles.headerRight}>
+                    <View style={styles.connectionStatus}>
+                        <StatusIndicator status={isConnected ? 'connected' : 'disconnected'} size={12} />
+                        <Text style={styles.connectionText}>
+                            {isConnected ? 'Conectado' : 'Desconectado'}
+                        </Text>
+                    </View>
+                    <SyncButton />
                 </View>
             </View>
 
@@ -165,7 +169,11 @@ const styles = StyleSheet.create({
         borderBottomColor: theme.colors.border,
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
+        alignItems: 'center',
+    },
+    headerLeft: {
+        flex: 1,
+        paddingRight: theme.spacing.sm,
     },
     farmName: {
         fontSize: theme.fontSize.xl,
@@ -177,13 +185,25 @@ const styles = StyleSheet.create({
         fontSize: theme.fontSize.sm,
         color: theme.colors.textSecondary,
     },
+    headerRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing.md,
+    },
     connectionStatus: {
         flexDirection: 'row',
         alignItems: 'center',
+        backgroundColor: theme.colors.backgroundLight,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
     },
     connectionText: {
-        marginLeft: theme.spacing.sm,
-        fontSize: theme.fontSize.sm,
+        marginLeft: 6,
+        fontSize: theme.fontSize.xs,
+        fontWeight: theme.fontWeight.medium,
         color: theme.colors.textSecondary,
     },
     scrollView: {

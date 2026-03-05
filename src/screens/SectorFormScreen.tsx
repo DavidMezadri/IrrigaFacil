@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, ScrollView, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useApp } from '../context/AppContext';
+import { useMQTT } from '../context/MQTTContext';
 import { Button } from '../components/Button';
 import { theme } from '../styles/theme';
 import { Sector } from '../types';
@@ -11,6 +12,7 @@ type Props = NativeStackScreenProps<any, 'SectorForm'>;
 
 export const SectorFormScreen: React.FC<Props> = ({ navigation, route }) => {
     const { state, dispatch, getSelectedFarm } = useApp();
+    const { isConnected, publishGpioCommand } = useMQTT();
     const { sectorId } = route.params || {};
     const isEditing = !!sectorId;
     const selectedFarm = getSelectedFarm();
@@ -20,16 +22,20 @@ export const SectorFormScreen: React.FC<Props> = ({ navigation, route }) => {
     const [name, setName] = useState(existingSector?.name || '');
     const [description, setDescription] = useState(existingSector?.description || '');
     const [area, setArea] = useState(existingSector?.area?.toString() || '');
-    const [mqttTopic, setMqttTopic] = useState(existingSector?.mqttTopic || '');
+    const [nodeId, setNodeId] = useState(String(existingSector?.nodeId ?? 1));
+    const [gpioPin, setGpioPin] = useState(String(existingSector?.gpioPin ?? ''));
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!selectedFarm) {
             Alert.alert('Erro', 'Nenhuma fazenda selecionada');
             return;
         }
-
-        if (!name.trim() || !mqttTopic.trim()) {
-            Alert.alert('Erro', 'Preencha todos os campos obrigatórios');
+        if (!name.trim()) {
+            Alert.alert('Erro', 'Preencha o nome do setor');
+            return;
+        }
+        if (!isEditing && !gpioPin.trim()) {
+            Alert.alert('Erro', 'Informe o pino GPIO para criar o setor');
             return;
         }
 
@@ -40,7 +46,8 @@ export const SectorFormScreen: React.FC<Props> = ({ navigation, route }) => {
             description: description.trim() || undefined,
             area: area ? parseFloat(area) : undefined,
             status: existingSector?.status || 'unknown',
-            mqttTopic: mqttTopic.trim(),
+            nodeId: Number(nodeId) || 1,
+            gpioPin: gpioPin.trim() ? Number(gpioPin) : undefined,
             createdAt: existingSector?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         };
@@ -51,11 +58,34 @@ export const SectorFormScreen: React.FC<Props> = ({ navigation, route }) => {
             dispatch({ type: 'ADD_SECTOR', payload: sector });
         }
 
+        // Publish MQTT GPIO command using the farm topic
+        if (isConnected) {
+            try {
+                const topic = selectedFarm.mqttTopic;
+                const farmName = selectedFarm.name;
+                if (isEditing) {
+                    await publishGpioCommand('update', 'sector', existingSector!.name, topic, farmName, {
+                        nodeId: sector.nodeId,
+                        gpioPin: sector.gpioPin,
+                        newName: sector.name !== existingSector?.name ? sector.name : undefined,
+                    });
+                } else {
+                    await publishGpioCommand('create', 'sector', sector.name, topic, farmName, {
+                        nodeId: sector.nodeId,
+                        gpioPin: sector.gpioPin,
+                    });
+                }
+            } catch (e) {
+                console.error('MQTT GPIO publish error:', e);
+                Alert.alert('Aviso MQTT', `Setor salvo localmente, mas falhou ao enviar para o broker: ${e}`);
+            }
+        }
+
         navigation.goBack();
     };
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
             <Text style={styles.title}>{isEditing ? 'Editar Setor' : 'Novo Setor'}</Text>
 
             <Text style={styles.label}>Nome *</Text>
@@ -86,15 +116,33 @@ export const SectorFormScreen: React.FC<Props> = ({ navigation, route }) => {
                 keyboardType="decimal-pad"
             />
 
-            <Text style={styles.label}>Tópico MQTT *</Text>
+            <Text style={styles.label}>Node ID</Text>
             <TextInput
                 style={styles.input}
-                value={mqttTopic}
-                onChangeText={setMqttTopic}
-                placeholder="Ex: fazenda1/setor/1/comando"
+                value={nodeId}
+                onChangeText={setNodeId}
+                placeholder="1"
                 placeholderTextColor={theme.colors.textMuted}
-                autoCapitalize="none"
+                keyboardType="numeric"
             />
+
+            <Text style={styles.label}>Pino GPIO {!isEditing && '*'}</Text>
+            <TextInput
+                style={styles.input}
+                value={gpioPin}
+                onChangeText={setGpioPin}
+                placeholder="Ex: 12"
+                placeholderTextColor={theme.colors.textMuted}
+                keyboardType="numeric"
+            />
+
+            {selectedFarm && (
+                <Text style={styles.topicInfo}>📡 Tópico MQTT da fazenda: {selectedFarm.mqttTopic}</Text>
+            )}
+
+            {!isConnected && (
+                <Text style={styles.offlineHint}>⚠️  Sem conexão MQTT — salvo localmente apenas.</Text>
+            )}
 
             <View style={styles.buttonContainer}>
                 <Button title={isEditing ? 'Salvar' : 'Criar'} onPress={handleSave} />
@@ -105,13 +153,8 @@ export const SectorFormScreen: React.FC<Props> = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: theme.colors.background,
-    },
-    content: {
-        padding: theme.spacing.lg,
-    },
+    container: { flex: 1, backgroundColor: theme.colors.background },
+    content: { padding: theme.spacing.lg },
     title: {
         fontSize: theme.fontSize.xxl,
         fontWeight: theme.fontWeight.bold,
@@ -134,10 +177,18 @@ const styles = StyleSheet.create({
         fontSize: theme.fontSize.md,
         color: theme.colors.text,
     },
-    buttonContainer: {
-        marginTop: theme.spacing.xl,
+    topicInfo: {
+        fontSize: theme.fontSize.sm,
+        color: theme.colors.textMuted,
+        marginTop: theme.spacing.lg,
+        fontFamily: 'monospace',
     },
-    cancelButton: {
-        marginTop: theme.spacing.md,
+    offlineHint: {
+        fontSize: theme.fontSize.sm,
+        color: theme.colors.warning,
+        marginTop: theme.spacing.sm,
+        textAlign: 'center',
     },
+    buttonContainer: { marginTop: theme.spacing.xl },
+    cancelButton: { marginTop: theme.spacing.md },
 });

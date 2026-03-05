@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { AppState, AppAction, Farm, Pump, Sector, Sensor, SensorReading } from '../types';
+import { AppState, AppAction, Farm, Pump, Sector, Sensor, SensorReading, Schedule } from '../types';
 import * as StorageService from '../services/storageService';
+import { generateId } from '../utils/messageFormatter';
 
 // Initial state
 const initialState: AppState = {
@@ -10,7 +11,10 @@ const initialState: AppState = {
     sectors: [],
     sensors: [],
     sensorReadings: {},
+    schedules: [],
     mqttConnected: false,
+    logEntries: [],
+    brokerConfig: null,
 };
 
 // Reducer
@@ -134,8 +138,124 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
                 },
             };
 
+        case 'SET_SCHEDULES':
+            return { ...state, schedules: action.payload };
+
+        case 'ADD_SCHEDULE':
+            return { ...state, schedules: [...state.schedules, action.payload] };
+
+        case 'UPDATE_SCHEDULE':
+            return {
+                ...state,
+                schedules: state.schedules.map((s) =>
+                    s.scheduleId === action.payload.scheduleId ? action.payload : s
+                ),
+            };
+
+        case 'DELETE_SCHEDULE':
+            return {
+                ...state,
+                schedules: state.schedules.filter((s) => s.scheduleId !== action.payload),
+            };
+
+        case 'TOGGLE_SCHEDULE_ENABLED':
+            return {
+                ...state,
+                schedules: state.schedules.map((s) =>
+                    s.scheduleId === action.payload.scheduleId
+                        ? { ...s, enabled: action.payload.enabled, updatedAt: new Date().toISOString() }
+                        : s
+                ),
+            };
+
+        case 'SYNC_FROM_NODE': {
+            const { farmId, data } = action.payload;
+            const now = new Date().toISOString();
+
+            // Upsert pumps & sectors from node gpios
+            let pumps = [...state.pumps];
+            let sectors = [...state.sectors];
+
+            for (const gpio of data.gpios) {
+                if (gpio.type === 'pump') {
+                    const existing = pumps.find((p) => p.name === gpio.equipament && p.farmId === farmId);
+                    if (existing) {
+                        pumps = pumps.map((p) =>
+                            p.id === existing.id ? { ...p, nodeId: gpio.nodeId, gpioPin: gpio.pin, updatedAt: now } : p
+                        );
+                    } else {
+                        pumps = [...pumps, {
+                            id: generateId(),
+                            farmId,
+                            name: gpio.equipament,
+                            status: 'unknown' as const,
+                            nodeId: gpio.nodeId,
+                            gpioPin: gpio.pin,
+                            createdAt: now,
+                            updatedAt: now,
+                        }];
+                    }
+                } else if (gpio.type === 'sector') {
+                    const existing = sectors.find((s) => s.name === gpio.equipament && s.farmId === farmId);
+                    if (existing) {
+                        sectors = sectors.map((s) =>
+                            s.id === existing.id ? { ...s, nodeId: gpio.nodeId, gpioPin: gpio.pin, updatedAt: now } : s
+                        );
+                    } else {
+                        sectors = [...sectors, {
+                            id: generateId(),
+                            farmId,
+                            name: gpio.equipament,
+                            status: 'unknown' as const,
+                            nodeId: gpio.nodeId,
+                            gpioPin: gpio.pin,
+                            createdAt: now,
+                            updatedAt: now,
+                        }];
+                    }
+                }
+            }
+
+            // Upsert schedules from node
+            let schedules = [...state.schedules];
+            for (const ns of data.schedules) {
+                const existing = schedules.find((s) => s.scheduleId === ns.scheduleId);
+                if (existing) {
+                    schedules = schedules.map((s) =>
+                        s.scheduleId === ns.scheduleId
+                            ? { ...s, enabled: ns.enabled, actions: ns.actions, updatedAt: now }
+                            : s
+                    );
+                } else {
+                    schedules = [...schedules, {
+                        scheduleId: ns.scheduleId,
+                        farmId,
+                        enabled: ns.enabled,
+                        actions: ns.actions,
+                        createdAt: now,
+                        updatedAt: now,
+                    }];
+                }
+            }
+
+            return { ...state, pumps, sectors, schedules };
+        }
+
+        case 'ADD_LOG_ENTRY':
+            // Keep last 500 messages
+            return {
+                ...state,
+                logEntries: [...state.logEntries, action.payload].slice(-500),
+            };
+
+        case 'CLEAR_LOGS':
+            return { ...state, logEntries: [] };
+
         case 'SET_MQTT_CONNECTED':
             return { ...state, mqttConnected: action.payload };
+
+        case 'SET_BROKER_CONFIG':
+            return { ...state, brokerConfig: action.payload };
 
         default:
             return state;
@@ -152,6 +272,7 @@ interface AppContextType {
     getFarmPumps: (farmId: string) => Pump[];
     getFarmSectors: (farmId: string) => Sector[];
     getFarmSensors: (farmId: string) => Sensor[];
+    getFarmSchedules: (farmId: string) => Schedule[];
     getSensorReadings: (sensorId: string) => SensorReading[];
     getLatestSensorReading: (sensorId: string) => SensorReading | null;
 }
@@ -166,20 +287,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [farms, pumps, sectors, sensors, selectedFarmId] = await Promise.all([
+                const [farms, pumps, sectors, sensors, schedules, selectedFarmId, brokerConfig] = await Promise.all([
                     StorageService.loadFarms(),
                     StorageService.loadPumps(),
                     StorageService.loadSectors(),
                     StorageService.loadSensors(),
+                    StorageService.loadSchedules(),
                     StorageService.loadSelectedFarm(),
+                    StorageService.loadBrokerConfig(),
                 ]);
 
                 dispatch({ type: 'SET_FARMS', payload: farms });
                 dispatch({ type: 'SET_PUMPS', payload: pumps });
                 dispatch({ type: 'SET_SECTORS', payload: sectors });
                 dispatch({ type: 'SET_SENSORS', payload: sensors });
+                dispatch({ type: 'SET_SCHEDULES', payload: schedules });
                 if (selectedFarmId) {
                     dispatch({ type: 'SELECT_FARM', payload: selectedFarmId });
+                }
+                if (brokerConfig) {
+                    dispatch({ type: 'SET_BROKER_CONFIG', payload: brokerConfig });
                 }
             } catch (error) {
                 console.error('Error loading data:', error);
@@ -207,8 +334,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, [state.sensors]);
 
     useEffect(() => {
+        StorageService.saveSchedules(state.schedules).catch(console.error);
+    }, [state.schedules]);
+
+    useEffect(() => {
         StorageService.saveSelectedFarm(state.selectedFarmId).catch(console.error);
     }, [state.selectedFarmId]);
+
+    useEffect(() => {
+        if (state.brokerConfig) {
+            StorageService.saveBrokerConfig(state.brokerConfig).catch(console.error);
+        }
+    }, [state.brokerConfig]);
 
     // Helper functions
     const getSelectedFarm = (): Farm | null => {
@@ -228,6 +365,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return state.sensors.filter((sensor) => sensor.farmId === farmId);
     };
 
+    const getFarmSchedules = (farmId: string): Schedule[] => {
+        return state.schedules.filter((s) => s.farmId === farmId);
+    };
+
     const getSensorReadings = (sensorId: string): SensorReading[] => {
         return state.sensorReadings[sensorId] || [];
     };
@@ -245,6 +386,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         getFarmPumps,
         getFarmSectors,
         getFarmSensors,
+        getFarmSchedules,
         getSensorReadings,
         getLatestSensorReading,
     };

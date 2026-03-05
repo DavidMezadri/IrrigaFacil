@@ -1,20 +1,20 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useApp } from '../context/AppContext';
 import { PumpControl } from '../components/PumpControl';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Button } from '../components/Button';
 import { theme } from '../styles/theme';
 import { StatusIndicator } from '../components/StatusIndicator';
 import { useMQTT } from '../context/MQTTContext';
+import { Pump } from '../types';
 
 type Props = NativeStackScreenProps<any, 'Pumps'>;
 
 export const PumpsScreen: React.FC<Props> = ({ navigation }) => {
     const { state, getSelectedFarm, getFarmPumps, dispatch } = useApp();
     const selectedFarm = getSelectedFarm();
-    const { isConnected } = useMQTT();
+    const { isConnected, publishGpioCommand } = useMQTT();
 
     if (!selectedFarm) {
         return (
@@ -26,13 +26,25 @@ export const PumpsScreen: React.FC<Props> = ({ navigation }) => {
 
     const pumps = getFarmPumps(selectedFarm.id);
 
-    const handleDelete = (pumpId: string) => {
+    const handleDelete = (pump: Pump) => {
         Alert.alert('Confirmar Exclusão', 'Deseja excluir esta bomba?', [
             { text: 'Cancelar', style: 'cancel' },
             {
                 text: 'Excluir',
                 style: 'destructive',
-                onPress: () => dispatch({ type: 'DELETE_PUMP', payload: pumpId }),
+                onPress: async () => {
+                    dispatch({ type: 'DELETE_PUMP', payload: pump.id });
+                    if (isConnected && selectedFarm) {
+                        const topic = selectedFarm.mqttTopic;
+                        try {
+                            await publishGpioCommand('delete', 'pump', pump.name, topic, selectedFarm.name, {
+                                nodeId: pump.nodeId,
+                            });
+                        } catch (e) {
+                            console.error('MQTT GPIO delete error:', e);
+                        }
+                    }
+                },
             },
         ]);
     };
@@ -56,19 +68,11 @@ export const PumpsScreen: React.FC<Props> = ({ navigation }) => {
                 data={pumps}
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
-                    <View>
-                        <PumpControl pump={item} />
-                        <View style={styles.actions}>
-                            <TouchableOpacity onPress={() => navigation.navigate('PumpForm', { pumpId: item.id })}>
-                                <Text style={styles.editText}>
-                                    <MaterialCommunityIcons name="pencil" size={24} color={theme.colors.text} /> Editar</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                                <Text style={styles.deleteText}>
-                                    <MaterialCommunityIcons name="trash-can-outline" size={24} color={theme.colors.text} /> Excluir</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
+                    <PumpControl
+                        pump={item}
+                        onEdit={() => navigation.navigate('PumpForm', { pumpId: item.id })}
+                        onDelete={() => handleDelete(item)}
+                    />
                 )}
                 ListEmptyComponent={
                     <View style={styles.emptyContainer}>
@@ -110,23 +114,6 @@ const styles = StyleSheet.create({
         padding: theme.spacing.lg,
         paddingBottom: 100,
     },
-    actions: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
-        marginTop: -theme.spacing.xxl,
-        marginBottom: theme.spacing.md,
-        paddingHorizontal: theme.spacing.md,
-    },
-    editText: {
-        fontSize: theme.fontSize.sm,
-        color: theme.colors.secondary,
-        fontWeight: theme.fontWeight.medium,
-    },
-    deleteText: {
-        fontSize: theme.fontSize.sm,
-        color: theme.colors.error,
-        fontWeight: theme.fontWeight.medium,
-    },
     emptyContainer: {
         padding: theme.spacing.xxl,
         alignItems: 'center',
@@ -150,6 +137,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         marginTop: theme.spacing.sm,
+    },
+    headerRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing.sm,
+    },
+    syncBtn: {
+        marginRight: theme.spacing.xs,
     },
     connectionStatus: {
         flexDirection: 'row',

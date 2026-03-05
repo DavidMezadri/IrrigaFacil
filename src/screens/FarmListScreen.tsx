@@ -12,6 +12,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 type RootStackParamList = {
     FarmList: undefined;
     FarmForm: { farmId?: string };
+    BrokerConfig: undefined;
     Main: undefined;
 };
 
@@ -63,7 +64,12 @@ export const FarmListScreen: React.FC<Props> = ({ navigation }) => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.title}>Minhas Fazendas</Text>
+                <View style={styles.headerTop}>
+                    <Text style={styles.title}>Minhas Fazendas</Text>
+                    <TouchableOpacity onPress={() => navigation.navigate('BrokerConfig')}>
+                        <MaterialCommunityIcons name="cog" size={28} color={theme.colors.text} />
+                    </TouchableOpacity>
+                </View>
                 {state.selectedFarmId && (
                     <View style={styles.connectionStatus}>
                         <StatusIndicator status={isConnected ? 'connected' : 'disconnected'} />
@@ -86,9 +92,6 @@ export const FarmListScreen: React.FC<Props> = ({ navigation }) => {
                                     {item.location && (
                                         <Text style={styles.farmLocation}><MaterialCommunityIcons name="google-maps" size={24} color={theme.colors.text} /> {item.location}</Text>
                                     )}
-                                    <Text style={styles.farmBroker}>
-                                        <MaterialCommunityIcons name="cable-data" size={24} color={theme.colors.text} /> {item.mqttConfig.brokerUrl}:{item.mqttConfig.port}
-                                    </Text>
                                 </View>
                                 {state.selectedFarmId === item.id && (
                                     <View style={styles.selectedBadge}>
@@ -148,6 +151,11 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border,
     },
+    headerTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
     title: {
         fontSize: theme.fontSize.xxl,
         fontWeight: theme.fontWeight.bold,
@@ -184,11 +192,6 @@ const styles = StyleSheet.create({
         fontSize: theme.fontSize.sm,
         color: theme.colors.textSecondary,
         marginBottom: theme.spacing.xs,
-    },
-    farmBroker: {
-        fontSize: theme.fontSize.sm,
-        color: theme.colors.textMuted,
-        fontFamily: 'monospace',
     },
     selectedBadge: {
         backgroundColor: theme.colors.primary,

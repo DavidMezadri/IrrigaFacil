@@ -36,10 +36,8 @@ export const FarmFormScreen: React.FC<Props> = ({ navigation, route }) => {
 
     const [name, setName] = useState(existingFarm?.name || '');
     const [location, setLocation] = useState(existingFarm?.location || '');
-    const [brokerUrl, setBrokerUrl] = useState(existingFarm?.mqttConfig.brokerUrl || '');
-    const [port, setPort] = useState(existingFarm?.mqttConfig.port.toString() || '1883');
-    const [username, setUsername] = useState(existingFarm?.mqttConfig.username || '');
-    const [password, setPassword] = useState(existingFarm?.mqttConfig.password || '');
+    const [mqttTopic, setMqttTopic] = useState(existingFarm?.mqttTopic || '');
+    const [mqttLogTopic, setMqttLogTopic] = useState(existingFarm?.mqttLogTopic || '');
 
     const handleSave = () => {
         // Validation
@@ -48,14 +46,8 @@ export const FarmFormScreen: React.FC<Props> = ({ navigation, route }) => {
             return;
         }
 
-        if (!brokerUrl.trim()) {
-            Alert.alert('Erro', 'Por favor, informe a URL do broker MQTT.');
-            return;
-        }
-
-        const portNumber = parseInt(port, 10);
-        if (isNaN(portNumber) || portNumber < 1 || portNumber > 65535) {
-            Alert.alert('Erro', 'Por favor, informe uma porta válida (1-65535).');
+        if (!mqttTopic.trim()) {
+            Alert.alert('Erro', 'Por favor, informe o tópico MQTT da fazenda.');
             return;
         }
 
@@ -63,13 +55,8 @@ export const FarmFormScreen: React.FC<Props> = ({ navigation, route }) => {
             id: isEditing ? farmId : generateId(),
             name: name.trim(),
             location: location.trim() || undefined,
-            mqttConfig: {
-                brokerUrl: brokerUrl.trim(),
-                port: portNumber,
-                username: username.trim() || undefined,
-                password: password.trim() || undefined,
-                clientId: `IrrigaFacil_${Date.now()}`,
-            },
+            mqttTopic: mqttTopic.trim(),
+            mqttLogTopic: mqttLogTopic.trim() || undefined,
             createdAt: existingFarm?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         };
@@ -113,88 +100,27 @@ export const FarmFormScreen: React.FC<Props> = ({ navigation, route }) => {
                         placeholder="Ex: São Paulo, SP"
                         placeholderTextColor={theme.colors.textMuted}
                     />
-                </View>
-
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Configuração MQTT</Text>
-
-                    <Text style={styles.label}>Configuração Rápida (Recomendado)</Text>
-                    <View style={styles.quickConfigContainer}>
-                        <TouchableOpacity
-                            style={styles.quickConfigButton}
-                            onPress={() => {
-                                setBrokerUrl('ws://broker.hivemq.com');
-                                setPort('8000');
-                                Alert.alert('Configurado', 'Configuração do HiveMQ (WebSocket) aplicada!');
-                            }}
-                        >
-                            <Text style={styles.quickConfigText}>HiveMQ Cloud (WS)</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.quickConfigButton, { marginLeft: 10 }]}
-                            onPress={() => {
-                                setBrokerUrl('ws://test.mosquitto.org');
-                                setPort('8080');
-                                Alert.alert('Configurado', 'Configuração do Mosquitto (WebSocket) aplicada!');
-                            }}
-                        >
-                            <Text style={styles.quickConfigText}>Mosquitto (WS)</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <Text style={styles.label}>URL do Broker *</Text>
+                    <Text style={styles.label}>Tópico MQTT *</Text>
                     <TextInput
                         style={styles.input}
-                        value={brokerUrl}
-                        onChangeText={setBrokerUrl}
-                        placeholder="Ex: ws://broker.hivemq.com"
+                        value={mqttTopic}
+                        onChangeText={setMqttTopic}
+                        placeholder="Ex: user/device_id"
                         placeholderTextColor={theme.colors.textMuted}
                         autoCapitalize="none"
                         autoCorrect={false}
                     />
 
-                    <Text style={styles.label}>Porta *</Text>
+                    <Text style={styles.label}>Tópico de Logs (opcional)</Text>
                     <TextInput
                         style={styles.input}
-                        value={port}
-                        onChangeText={setPort}
-                        placeholder="8000 (WebSocket)"
-                        placeholderTextColor={theme.colors.textMuted}
-                        keyboardType="number-pad"
-                    />
-
-                    <Text style={styles.label}>Usuário (opcional)</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={username}
-                        onChangeText={setUsername}
-                        placeholder="Usuário MQTT"
+                        value={mqttLogTopic}
+                        onChangeText={setMqttLogTopic}
+                        placeholder="Ex: user/device_id/logs"
                         placeholderTextColor={theme.colors.textMuted}
                         autoCapitalize="none"
                         autoCorrect={false}
                     />
-
-                    <Text style={styles.label}>Senha (opcional)</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={password}
-                        onChangeText={setPassword}
-                        placeholder="Senha MQTT"
-                        placeholderTextColor={theme.colors.textMuted}
-                        secureTextEntry
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                    />
-                </View>
-
-                <View style={styles.helpBox}>
-                    <Text style={styles.helpTitle}>
-                        <MaterialCommunityIcons name="lightbulb-outline" size={24} color={theme.colors.text} /> Importante (React Native)</Text>
-                    <Text style={styles.helpText}>
-                        Este aplicativo usa WebSockets. Não use portas MQTT padrão (1883).{'\n'}
-                        • HiveMQ: ws://broker.hivemq.com (Porta 8000){'\n'}
-                        • Mosquitto: ws://test.mosquitto.org (Porta 8080)
-                    </Text>
                 </View>
 
                 <View style={styles.buttonContainer}>
@@ -211,7 +137,7 @@ export const FarmFormScreen: React.FC<Props> = ({ navigation, route }) => {
                     />
                 </View>
             </ScrollView>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingView >
     );
 };
 
@@ -257,41 +183,6 @@ const styles = StyleSheet.create({
         padding: theme.spacing.md,
         fontSize: theme.fontSize.md,
         color: theme.colors.text,
-    },
-    quickConfigContainer: {
-        flexDirection: 'row',
-        marginBottom: theme.spacing.sm,
-    },
-    quickConfigButton: {
-        flex: 1,
-        backgroundColor: theme.colors.secondary,
-        padding: theme.spacing.sm,
-        borderRadius: theme.borderRadius.sm,
-        alignItems: 'center',
-    },
-    quickConfigText: {
-        color: '#FFFFFF',
-        fontSize: theme.fontSize.sm,
-        fontWeight: theme.fontWeight.bold,
-    },
-    helpBox: {
-        backgroundColor: theme.colors.backgroundLight,
-        borderLeftWidth: 4,
-        borderLeftColor: theme.colors.info,
-        padding: theme.spacing.md,
-        borderRadius: theme.borderRadius.sm,
-        marginBottom: theme.spacing.lg,
-    },
-    helpTitle: {
-        fontSize: theme.fontSize.md,
-        fontWeight: theme.fontWeight.semibold,
-        color: theme.colors.text,
-        marginBottom: theme.spacing.sm,
-    },
-    helpText: {
-        fontSize: theme.fontSize.sm,
-        color: theme.colors.textSecondary,
-        lineHeight: 20,
     },
     buttonContainer: {
         marginTop: theme.spacing.lg,
