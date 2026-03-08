@@ -25,6 +25,10 @@ export const PumpFormScreen: React.FC<Props> = ({ navigation, route }) => {
     const [gpioPin, setGpioPin] = useState(String(existingPump?.gpioPin ?? ''));
 
     const handleSave = async () => {
+        if (!isConnected) {
+            Alert.alert('Sem conexão', 'Conecte ao broker MQTT antes de criar ou editar uma bomba.');
+            return;
+        }
         if (!selectedFarm) {
             Alert.alert('Erro', 'Nenhuma fazenda selecionada');
             return;
@@ -126,10 +130,6 @@ export const PumpFormScreen: React.FC<Props> = ({ navigation, route }) => {
 
             {selectedFarm && (
                 <Text style={styles.topicInfo}>📡 Tópico MQTT da fazenda: {selectedFarm.mqttTopic}</Text>
-            )}
-
-            {!isConnected && (
-                <Text style={styles.offlineHint}>⚠️  Sem conexão MQTT — salvo localmente apenas.</Text>
             )}
 
             <View style={styles.buttonContainer}>

@@ -8,6 +8,7 @@ import { StatusIndicator } from '../components/StatusIndicator';
 import { theme } from '../styles/theme';
 import { useMQTT } from '../context/MQTTContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type RootStackParamList = {
     FarmList: undefined;
@@ -21,6 +22,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'FarmList'>;
 export const FarmListScreen: React.FC<Props> = ({ navigation }) => {
     const { state, dispatch } = useApp();
     const { isConnected } = useMQTT();
+    const insets = useSafeAreaInsets();
 
     const handleSelectFarm = (farmId: string) => {
         dispatch({ type: 'SELECT_FARM', payload: farmId });
@@ -130,7 +132,7 @@ export const FarmListScreen: React.FC<Props> = ({ navigation }) => {
                 contentContainerStyle={styles.listContent}
             />
 
-            <View style={styles.footer}>
+            <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, theme.spacing.lg) }]}>
                 <Button title="Adicionar Fazenda" onPress={handleAddFarm} variant="primary">
                     <MaterialCommunityIcons name="plus" size={24} color={theme.colors.text} />
                     <Text style={styles.selectedText}>Adicionar Fazenda</Text>
@@ -248,6 +250,7 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         padding: theme.spacing.lg,
+        paddingTop: theme.spacing.md,
         backgroundColor: theme.colors.background,
         borderTopWidth: 1,
         borderTopColor: theme.colors.border,

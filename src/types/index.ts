@@ -119,8 +119,8 @@ export interface NodeGpio {
 
 /** Full payload inside a `type:"response"` / `action:"getAll"` MQTT message */
 export interface NodeSyncPayload {
-  gpios: NodeGpio[];
-  schedules: Array<{
+  gpios?: NodeGpio[];
+  schedules?: Array<{
     scheduleId: string;
     enabled: boolean;
     actions: Array<{

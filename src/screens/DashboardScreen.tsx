@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 import { useMQTT } from '../context/MQTTContext';
 import { Card } from '../components/Card';
@@ -23,7 +24,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Dashboard'>;
 
 export const DashboardScreen: React.FC<Props> = ({ navigation }) => {
     const { state, getSelectedFarm, getFarmPumps, getFarmSectors, getFarmSensors, getLatestSensorReading } = useApp();
-    const { isConnected } = useMQTT();
+    const { isConnected, publishDeleteAllGpios, publishDeleteAllSchedules } = useMQTT();
 
     const selectedFarm = getSelectedFarm();
 
@@ -152,6 +153,92 @@ export const DashboardScreen: React.FC<Props> = ({ navigation }) => {
                         </Text>
                     </View>
                 )}
+
+                {/* Danger Zone */}
+                <View style={styles.dangerZone}>
+                    <View style={styles.dangerZoneHeader}>
+                        <MaterialCommunityIcons name="alert-octagon" size={18} color={theme.colors.error} />
+                        <Text style={styles.dangerZoneTitle}>Zona de Risco</Text>
+                        <View style={styles.dangerBadge}>
+                            <Text style={styles.dangerBadgeText}>IRREVERSÍVEL</Text>
+                        </View>
+                    </View>
+                    <Text style={styles.dangerZoneSubtitle}>
+                        Estas ações enviam comandos diretos ao nó e não podem ser desfeitas.
+                    </Text>
+
+                    <TouchableOpacity
+                        style={[styles.dangerCard, !isConnected && styles.dangerCardDisabled]}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                            if (!isConnected) {
+                                Alert.alert('Sem Conexão', 'Conecte-se ao broker MQTT antes de executar esta ação.');
+                                return;
+                            }
+                            Alert.alert(
+                                '⚠️ Excluir Todos GPIOs',
+                                'Todos os pinos GPIO (bombas e setores) serão removidos do nó físico. Esta ação não pode ser desfeita.\n\nDeseja continuar?',
+                                [
+                                    { text: 'Cancelar', style: 'cancel' },
+                                    {
+                                        text: 'Excluir Tudo',
+                                        style: 'destructive',
+                                        onPress: () => publishDeleteAllGpios().catch(console.error),
+                                    }
+                                ]
+                            );
+                        }}
+                    >
+                        <View style={styles.dangerCardIcon}>
+                            <MaterialCommunityIcons name="chip" size={22} color={theme.colors.error} />
+                        </View>
+                        <View style={styles.dangerCardContent}>
+                            <Text style={styles.dangerCardTitle}>Excluir Todos GPIOs</Text>
+                            <Text style={styles.dangerCardDesc}>Remove bombas e setores do nó físico</Text>
+                        </View>
+                        <MaterialCommunityIcons
+                            name="chevron-right"
+                            size={20}
+                            color={!isConnected ? theme.colors.textMuted : theme.colors.error}
+                        />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.dangerCard, !isConnected && styles.dangerCardDisabled]}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                            if (!isConnected) {
+                                Alert.alert('Sem Conexão', 'Conecte-se ao broker MQTT antes de executar esta ação.');
+                                return;
+                            }
+                            Alert.alert(
+                                '⚠️ Excluir Todos Schedules',
+                                'Todos os agendamentos configurados no nó serão removidos permanentemente.\n\nDeseja continuar?',
+                                [
+                                    { text: 'Cancelar', style: 'cancel' },
+                                    {
+                                        text: 'Excluir Tudo',
+                                        style: 'destructive',
+                                        onPress: () => publishDeleteAllSchedules().catch(console.error),
+                                    }
+                                ]
+                            );
+                        }}
+                    >
+                        <View style={styles.dangerCardIcon}>
+                            <MaterialCommunityIcons name="calendar-remove" size={22} color={theme.colors.error} />
+                        </View>
+                        <View style={styles.dangerCardContent}>
+                            <Text style={styles.dangerCardTitle}>Excluir Todos Schedules</Text>
+                            <Text style={styles.dangerCardDesc}>Remove todos os agendamentos do nó</Text>
+                        </View>
+                        <MaterialCommunityIcons
+                            name="chevron-right"
+                            size={20}
+                            color={!isConnected ? theme.colors.textMuted : theme.colors.error}
+                        />
+                    </TouchableOpacity>
+                </View>
             </ScrollView>
         </View>
     );
@@ -297,5 +384,82 @@ const styles = StyleSheet.create({
         color: theme.colors.textMuted,
         textAlign: 'center',
         lineHeight: 24,
+    },
+    dangerZone: {
+        marginTop: theme.spacing.xl,
+        borderWidth: 1,
+        borderColor: `${theme.colors.error}55`,
+        borderRadius: theme.borderRadius.lg,
+        overflow: 'hidden',
+        marginBottom: theme.spacing.lg,
+    },
+    dangerZoneHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing.sm,
+        backgroundColor: `${theme.colors.error}18`,
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.sm,
+        borderBottomWidth: 1,
+        borderBottomColor: `${theme.colors.error}33`,
+    },
+    dangerZoneTitle: {
+        flex: 1,
+        fontSize: theme.fontSize.sm,
+        fontWeight: theme.fontWeight.bold,
+        color: theme.colors.error,
+        letterSpacing: 0.5,
+    },
+    dangerBadge: {
+        backgroundColor: `${theme.colors.error}33`,
+        borderRadius: theme.borderRadius.sm,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+    },
+    dangerBadgeText: {
+        fontSize: 9,
+        fontWeight: theme.fontWeight.bold,
+        color: theme.colors.error,
+        letterSpacing: 1,
+    },
+    dangerZoneSubtitle: {
+        fontSize: theme.fontSize.xs,
+        color: theme.colors.textMuted,
+        paddingHorizontal: theme.spacing.md,
+        paddingTop: theme.spacing.sm,
+        paddingBottom: theme.spacing.xs,
+    },
+    dangerCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: theme.spacing.md,
+        gap: theme.spacing.md,
+        borderTopWidth: 1,
+        borderTopColor: `${theme.colors.error}22`,
+    },
+    dangerCardDisabled: {
+        opacity: 0.4,
+    },
+    dangerCardIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: theme.borderRadius.md,
+        backgroundColor: `${theme.colors.error}18`,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    dangerCardContent: {
+        flex: 1,
+    },
+    dangerCardTitle: {
+        fontSize: theme.fontSize.md,
+        fontWeight: theme.fontWeight.semibold,
+        color: theme.colors.text,
+        marginBottom: 2,
+    },
+    dangerCardDesc: {
+        fontSize: theme.fontSize.xs,
+        color: theme.colors.textMuted,
     },
 });

@@ -36,18 +36,20 @@ export const SchedulesScreen: React.FC<Props> = ({ navigation }) => {
     const mqttTopic = selectedFarm.mqttTopic;
 
     const handleToggleEnabled = async (schedule: Schedule) => {
+        if (!isConnected) {
+            Alert.alert('Sem conexão', 'Conecte ao broker MQTT antes de ativar ou desativar um schedule.');
+            return;
+        }
         const updated: Schedule = {
             ...schedule,
             enabled: !schedule.enabled,
             updatedAt: new Date().toISOString(),
         };
         dispatch({ type: 'TOGGLE_SCHEDULE_ENABLED', payload: { scheduleId: schedule.scheduleId, enabled: updated.enabled } });
-        if (isConnected) {
-            try {
-                await publishSchedule('update', updated, mqttTopic);
-            } catch (e) {
-                console.error('MQTT publish error:', e);
-            }
+        try {
+            await publishSchedule('update', updated, mqttTopic);
+        } catch (e) {
+            console.error('MQTT publish error:', e);
         }
     };
 
@@ -158,7 +160,16 @@ export const SchedulesScreen: React.FC<Props> = ({ navigation }) => {
             />
 
             <View style={styles.footer}>
-                <Button title="➕ Novo Schedule" onPress={() => navigation.navigate('ScheduleForm', {})} />
+                <Button
+                    title="➕ Novo Schedule"
+                    onPress={() => {
+                        if (!isConnected) {
+                            Alert.alert('Sem conexão', 'Conecte ao broker MQTT antes de criar um schedule.');
+                            return;
+                        }
+                        navigation.navigate('ScheduleForm', {});
+                    }}
+                />
             </View>
         </View>
     );

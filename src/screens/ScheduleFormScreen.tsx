@@ -10,7 +10,9 @@ import {
     Alert,
     Modal,
     FlatList,
+    Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
@@ -44,6 +46,10 @@ export const ScheduleFormScreen: React.FC<Props> = ({ navigation, route }) => {
 
     const [isSelectingEquip, setIsSelectingEquip] = useState(false);
     const [currentActionIndex, setCurrentActionIndex] = useState<number | null>(null);
+
+    // ─── time picker state ─────────────────────────────────────────────────────
+    const [showTimePicker, setShowTimePicker] = useState(false);
+    const [timePickerIndex, setTimePickerIndex] = useState<number | null>(null);
 
     // Load existing schedule when editing
     useEffect(() => {
@@ -99,6 +105,10 @@ export const ScheduleFormScreen: React.FC<Props> = ({ navigation, route }) => {
 
     // ─── save ───────────────────────────────────────────────────────────────────
     const handleSave = async () => {
+        if (!isConnected) {
+            Alert.alert('Sem conexão', 'Conecte ao broker MQTT antes de criar ou editar um schedule.');
+            return;
+        }
         if (!formScheduleId.trim()) {
             Alert.alert('Erro', 'Informe o ID do schedule.');
             return;
@@ -141,6 +151,32 @@ export const ScheduleFormScreen: React.FC<Props> = ({ navigation, route }) => {
         }
 
         navigation.goBack();
+    };
+
+    // ─── time picker handler ────────────────────────────────────────────────────
+    const handleTimeChange = (event: any, selectedDate?: Date) => {
+        if (Platform.OS === 'android') {
+            setShowTimePicker(false);
+        }
+        if (selectedDate && timePickerIndex !== null) {
+            const hours = String(selectedDate.getHours()).padStart(2, '0');
+            const minutes = String(selectedDate.getMinutes()).padStart(2, '0');
+            updateAction(timePickerIndex, 'start', `${hours}:${minutes}`);
+        }
+        if (Platform.OS === 'ios' && event.type === 'set') {
+            setShowTimePicker(false);
+        }
+    };
+
+    // Parse pure "HH:MM" into Date for the picker UI
+    const getPickerDate = (timeStr: string): Date => {
+        const d = new Date();
+        if (!timeStr) return d;
+        const pts = timeStr.split(':');
+        if (pts.length === 2) {
+            d.setHours(Number(pts[0]) || 0, Number(pts[1]) || 0, 0, 0);
+        }
+        return d;
     };
 
     // ─── render ─────────────────────────────────────────────────────────────────
@@ -197,20 +233,7 @@ export const ScheduleFormScreen: React.FC<Props> = ({ navigation, route }) => {
                             </TouchableOpacity>
                         </View>
 
-                        {/* nodeId */}
-                        <View style={styles.field}>
-                            <Text style={styles.label}>Node ID</Text>
-                            <TextInput
-                                style={styles.input}
-                                value={String(action.nodeId)}
-                                onChangeText={(v) =>
-                                    updateAction(idx, 'nodeId', Number(v) || 1)
-                                }
-                                keyboardType="numeric"
-                                placeholderTextColor={theme.colors.textMuted}
-                            />
-                        </View>
-
+                        {/* Remove NodeId Form Field (Auto-assigned) */}
                         {/* type: pump / sector */}
                         <View style={styles.field}>
                             <Text style={styles.label}>Tipo</Text>
@@ -287,14 +310,18 @@ export const ScheduleFormScreen: React.FC<Props> = ({ navigation, route }) => {
                         <View style={styles.rowFields}>
                             <View style={[styles.field, { flex: 1, marginRight: theme.spacing.sm }]}>
                                 <Text style={styles.label}>Start (HH:MM) *</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    value={action.start}
-                                    onChangeText={(v) => updateAction(idx, 'start', v)}
-                                    placeholder="06:00"
-                                    placeholderTextColor={theme.colors.textMuted}
-                                    keyboardType="numbers-and-punctuation"
-                                />
+                                <TouchableOpacity
+                                    style={styles.timePickerButton}
+                                    onPress={() => {
+                                        setTimePickerIndex(idx);
+                                        setShowTimePicker(true);
+                                    }}
+                                >
+                                    <MaterialCommunityIcons name="clock-outline" size={20} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
+                                    <Text style={[styles.timePickerText, !action.start && { color: theme.colors.textMuted }]}>
+                                        {action.start || 'Selecione a hora'}
+                                    </Text>
+                                </TouchableOpacity>
                             </View>
                             <View style={[styles.field, { flex: 1 }]}>
                                 <Text style={styles.label}>Stop (HH:MM ou seg) *</Text>
@@ -320,11 +347,6 @@ export const ScheduleFormScreen: React.FC<Props> = ({ navigation, route }) => {
             {/* Save button */}
             <View style={styles.saveSection}>
                 <Button title={isEditing ? '💾 Salvar Alterações' : '✅ Criar Schedule'} onPress={handleSave} />
-                {!isConnected && (
-                    <Text style={styles.offlineHint}>
-                        ⚠️  Sem conexão MQTT — schedule será salvo localmente apenas.
-                    </Text>
-                )}
             </View>
 
             {/* Equipment Selection Modal */}
@@ -357,17 +379,26 @@ export const ScheduleFormScreen: React.FC<Props> = ({ navigation, route }) => {
                                     onPress={() => {
                                         if (currentActionIndex !== null) {
                                             updateAction(currentActionIndex, 'equipament', item.name);
+                                            // Auto-assign the exact node ID from the selected equipment
+                                            updateAction(currentActionIndex, 'nodeId', item.nodeId ?? 1);
                                         }
                                         setIsSelectingEquip(false);
                                     }}
                                 >
-                                    <MaterialCommunityIcons
-                                        name={currentActionIndex !== null && actions[currentActionIndex]?.type === 'pump' ? 'pump' : 'water-pump'}
-                                        size={24}
-                                        color={theme.colors.primary}
-                                        style={styles.modalOptionIcon}
-                                    />
-                                    <Text style={styles.modalOptionText}>{item.name}</Text>
+                                    <View style={styles.modalOptionContent}>
+                                        <MaterialCommunityIcons
+                                            name={currentActionIndex !== null && actions[currentActionIndex]?.type === 'pump' ? 'pump' : 'water-pump'}
+                                            size={24}
+                                            color={theme.colors.primary}
+                                            style={styles.modalOptionIcon}
+                                        />
+                                        <View style={styles.modalOptionTextContainer}>
+                                            <Text style={styles.modalOptionText}>{item.name}</Text>
+                                            <Text style={styles.modalOptionSubText}>
+                                                Nó: {item.nodeId ?? 1} {item.description ? `• ${item.description}` : ''}
+                                            </Text>
+                                        </View>
+                                    </View>
                                 </TouchableOpacity>
                             )}
                             ListEmptyComponent={
@@ -384,6 +415,17 @@ export const ScheduleFormScreen: React.FC<Props> = ({ navigation, route }) => {
                     </View>
                 </TouchableOpacity>
             </Modal>
+
+            {/* Time Picker */}
+            {showTimePicker && timePickerIndex !== null && (
+                <DateTimePicker
+                    value={getPickerDate(actions[timePickerIndex].start)}
+                    mode="time"
+                    is24Hour={true}
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handleTimeChange}
+                />
+            )}
         </ScrollView>
     );
 };
@@ -428,6 +470,21 @@ const styles = StyleSheet.create({
         padding: theme.spacing.md,
         color: theme.colors.text,
         fontSize: theme.fontSize.md,
+    },
+    timePickerButton: {
+        backgroundColor: theme.colors.backgroundLight,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        borderRadius: theme.borderRadius.md,
+        padding: theme.spacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        minHeight: 52, // Match text input height roughly
+    },
+    timePickerText: {
+        color: theme.colors.text,
+        fontSize: 12,
+        flex: 1,
     },
     equipmentSelector: {
         backgroundColor: theme.colors.backgroundLight,
@@ -564,6 +621,19 @@ const styles = StyleSheet.create({
     modalOptionText: {
         fontSize: theme.fontSize.lg,
         color: theme.colors.text,
+    },
+    modalOptionContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    modalOptionTextContainer: {
+        flex: 1,
+    },
+    modalOptionSubText: {
+        fontSize: theme.fontSize.xs,
+        color: theme.colors.textMuted,
+        marginTop: 2,
     },
     modalEmptyText: {
         fontSize: theme.fontSize.md,

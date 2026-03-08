@@ -31,7 +31,22 @@ export class MQTTService {
                     brokerUrl = brokerUrl.replace('mqtts://', 'wss://');
                 }
 
-                const fullUrl = `${brokerUrl}:${config.port}`;
+                let cleanUrl = brokerUrl;
+                let path = '';
+
+                // Extract path if it exists (e.g. from ws://broker.emqx.io/mqtt)
+                const pathIndex = cleanUrl.indexOf('/', cleanUrl.indexOf('://') + 3);
+                if (pathIndex !== -1) {
+                    path = cleanUrl.substring(pathIndex);
+                    cleanUrl = cleanUrl.substring(0, pathIndex);
+                }
+
+                // Many public brokers require the /mqtt path for WebSockets array
+                if (!path && (cleanUrl.includes('hivemq.com') || cleanUrl.includes('mosquitto.org') || cleanUrl.includes('emqx.io'))) {
+                    path = '/mqtt';
+                }
+
+                const fullUrl = `${cleanUrl}:${config.port}${path}`;
 
                 const options: mqtt.IClientOptions = {
                     clientId: config.clientId,

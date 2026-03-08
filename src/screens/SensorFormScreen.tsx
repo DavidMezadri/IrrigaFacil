@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TextInput, ScrollView, Alert } from 'react-nati
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Picker } from '@react-native-picker/picker';
 import { useApp } from '../context/AppContext';
+import { useMQTT } from '../context/MQTTContext';
 import { Button } from '../components/Button';
 import { theme } from '../styles/theme';
 import { Sensor, SensorType } from '../types';
@@ -12,6 +13,7 @@ type Props = NativeStackScreenProps<any, 'SensorForm'>;
 
 export const SensorFormScreen: React.FC<Props> = ({ navigation, route }) => {
     const { state, dispatch, getSelectedFarm } = useApp();
+    const { isConnected } = useMQTT();
     const { sensorId } = route.params || {};
     const isEditing = !!sensorId;
     const selectedFarm = getSelectedFarm();
@@ -29,6 +31,10 @@ export const SensorFormScreen: React.FC<Props> = ({ navigation, route }) => {
     };
 
     const handleSave = () => {
+        if (!isConnected) {
+            Alert.alert('Sem conexão', 'Conecte ao broker MQTT antes de criar ou editar um sensor.');
+            return;
+        }
         if (!selectedFarm) {
             Alert.alert('Erro', 'Nenhuma fazenda selecionada');
             return;

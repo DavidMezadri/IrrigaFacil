@@ -1,123 +1,141 @@
-import React, { useRef } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    FlatList,
-    TouchableOpacity,
-    Alert,
-} from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, SectionList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
-import { LogEntry, LogLevel } from '../types';
+import { dbService, DayGroup, LogLevel, LogCategory } from '../services/dbService';
+import { AccordionHourGroup } from '../components/AccordionHourGroup';
 import { theme } from '../styles/theme';
 
-const levelColor: Record<LogLevel, string> = {
-    info: theme.colors.text,
-    debug: theme.colors.textMuted,
-    warn: '#F59E0B',
-    error: theme.colors.error,
-};
-
-const levelIcon: Record<LogLevel, string> = {
-    info: 'information-outline',
-    debug: 'bug-outline',
-    warn: 'alert-outline',
-    error: 'close-circle-outline',
-};
-
-const formatTime = (iso: string): string => {
-    const d = new Date(iso);
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    const ss = String(d.getSeconds()).padStart(2, '0');
-    return `${hh}:${mm}:${ss}`;
-};
-
-const LogRow: React.FC<{ entry: LogEntry }> = ({ entry }) => {
-    const color = levelColor[entry.level];
-    return (
-        <View style={styles.row}>
-            <MaterialCommunityIcons
-                name={levelIcon[entry.level] as any}
-                size={16}
-                color={color}
-                style={styles.rowIcon}
-            />
-            <View style={styles.rowBody}>
-                <Text style={[styles.rowTime, { color: theme.colors.textMuted }]}>
-                    {formatTime(entry.timestamp)}
-                    {'  '}
-                    <Text style={[styles.rowLevel, { color }]}>
-                        [{entry.level.toUpperCase()}]
-                    </Text>
-                </Text>
-                <Text style={[styles.rowMessage, { color }]} selectable>
-                    {entry.message}
-                </Text>
-            </View>
-        </View>
-    );
-};
-
 export const LogsScreen: React.FC = () => {
-    const { state, dispatch, getSelectedFarm } = useApp();
-    const flatListRef = useRef<FlatList>(null);
-    const selectedFarm = getSelectedFarm();
-    const logs = state.logEntries;
+    const { state } = useApp();
+    const [isLoading, setIsLoading] = useState(true);
+    const [days, setDays] = useState<DayGroup[]>([]);
 
-    const handleClear = () => {
-        Alert.alert('Limpar Logs', 'Deseja remover todos os logs?', [
-            { text: 'Cancelar', style: 'cancel' },
-            {
-                text: 'Limpar',
-                style: 'destructive',
-                onPress: () => dispatch({ type: 'CLEAR_LOGS' }),
-            },
-        ]);
+    // Filters
+    const [levelFilter, setLevelFilter] = useState<LogLevel[]>([]);
+    const [categoryFilter, setCategoryFilter] = useState<LogCategory[]>([]);
+
+    const selectedFarm = state.farms.find(f => f.id === state.selectedFarmId);
+
+    const loadLogs = async () => {
+        if (!selectedFarm) return;
+        setIsLoading(true);
+        try {
+            const data = await dbService.getLogsGroupedByDayAndHour(
+                selectedFarm.id,
+                levelFilter.length > 0 ? levelFilter : undefined,
+                categoryFilter.length > 0 ? categoryFilter : undefined
+            );
+            setDays(data);
+        } catch (error) {
+            console.error("Failed to load logs from db", error);
+        } finally {
+            setIsLoading(false);
+        }
     };
+
+    // Load logs every time screen gains focus
+    useFocusEffect(
+        useCallback(() => {
+            loadLogs();
+        }, [selectedFarm?.id, levelFilter, categoryFilter])
+    );
+
+    const toggleLevelFilter = (level: LogLevel) => {
+        setLevelFilter(prev =>
+            prev.includes(level) ? prev.filter(l => l !== level) : [...prev, level]
+        );
+    };
+
+    const formatDateHeader = (dateStr: string) => {
+        const [year, month, day] = dateStr.split('-');
+        return `${day}/${month}/${year}`;
+    };
+
+    if (!selectedFarm) {
+        return (
+            <View style={styles.centerContainer}>
+                <Text style={styles.emptyText}>Selecione uma fazenda primeiro</Text>
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
                 <View>
-                    <Text style={styles.title}>Logs do Nó</Text>
+                    <Text style={styles.title}>Logs do Sistema</Text>
                     <Text style={styles.subtitle}>
                         {selectedFarm?.mqttLogTopic
-                            ? `📡 ${selectedFarm.mqttLogTopic}`
+                            ? `📡 Capturando de ${selectedFarm.mqttLogTopic}`
                             : 'Nenhum tópico de logs configurado'}
                     </Text>
                 </View>
-                <View style={styles.headerRight}>
-                    <Text style={styles.count}>{logs.length} mensagens</Text>
-                    <TouchableOpacity style={styles.clearBtn} onPress={handleClear}>
-                        <MaterialCommunityIcons name="delete-sweep-outline" size={20} color={theme.colors.error} />
-                        <Text style={styles.clearText}>Limpar</Text>
-                    </TouchableOpacity>
+                <TouchableOpacity
+                    style={styles.refreshBtn}
+                    onPress={loadLogs}
+                >
+                    <MaterialCommunityIcons name="refresh" size={24} color={theme.colors.text} />
+                </TouchableOpacity>
+            </View>
+
+            {/* Filters */}
+            <View style={styles.filtersContainer}>
+                <Text style={styles.filterTitle}>Filtrar por Gravidade:</Text>
+                <View style={styles.chipsRow}>
+                    {(['ERROR', 'WARN', 'INFO', 'SUCCESS'] as LogLevel[]).map(level => {
+                        const isActive = levelFilter.includes(level);
+                        return (
+                            <TouchableOpacity
+                                key={level}
+                                onPress={() => toggleLevelFilter(level)}
+                                style={[
+                                    styles.chip,
+                                    isActive && styles.chipActive,
+                                    isActive && level === 'ERROR' && { backgroundColor: theme.colors.error, borderColor: theme.colors.error },
+                                    isActive && level === 'WARN' && { backgroundColor: '#F5A623', borderColor: '#F5A623' },
+                                    isActive && level === 'SUCCESS' && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }
+                                ]}
+                            >
+                                <Text style={[
+                                    styles.chipText,
+                                    isActive && styles.chipTextActive
+                                ]}>{level}</Text>
+                            </TouchableOpacity>
+                        );
+                    })}
                 </View>
             </View>
 
-            {/* Log list */}
-            {logs.length === 0 ? (
-                <View style={styles.empty}>
-                    <MaterialCommunityIcons name="text-box-outline" size={48} color={theme.colors.textMuted} />
-                    <Text style={styles.emptyText}>Nenhuma mensagem ainda</Text>
-                    <Text style={styles.emptyHint}>
-                        {selectedFarm?.mqttLogTopic
-                            ? `Aguardando mensagens em\n${selectedFarm.mqttLogTopic}`
-                            : 'Configure o tópico de logs nas\nconfigurações da fazenda.'}
-                    </Text>
+            {/* List */}
+            {isLoading ? (
+                <View style={styles.centerContainer}>
+                    <ActivityIndicator size="large" color={theme.colors.primary} />
+                    <Text style={{ marginTop: 10, color: theme.colors.textMuted }}>Buscando no banco de dados...</Text>
+                </View>
+            ) : days.length === 0 ? (
+                <View style={styles.centerContainer}>
+                    <MaterialCommunityIcons name="clipboard-text-outline" size={64} color={theme.colors.textMuted} />
+                    <Text style={styles.emptyText}>Nenhum log encontrado.</Text>
                 </View>
             ) : (
-                <FlatList
-                    ref={flatListRef}
-                    data={logs}
-                    keyExtractor={(item) => item.id}
-                    renderItem={({ item }) => <LogRow entry={item} />}
+                <SectionList
+                    sections={days.map(d => ({ ...d, data: d.hours }))}
+                    keyExtractor={(item, index) => item.hour + index}
+                    renderSectionHeader={({ section: { date } }) => (
+                        <View style={styles.dateHeader}>
+                            <MaterialCommunityIcons name="calendar-month" size={18} color={theme.colors.text} />
+                            <Text style={styles.dateHeaderText}>{formatDateHeader(date)}</Text>
+                        </View>
+                    )}
+                    renderItem={({ item }) => (
+                        <AccordionHourGroup group={item} />
+                    )}
                     contentContainerStyle={styles.listContent}
-                    onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-                    ItemSeparatorComponent={() => <View style={styles.separator} />}
+                    showsVerticalScrollIndicator={false}
                 />
             )}
         </View>
@@ -137,6 +155,7 @@ const styles = StyleSheet.create({
         paddingTop: theme.spacing.xl,
         borderBottomWidth: 1,
         borderBottomColor: theme.colors.border,
+        backgroundColor: theme.colors.background,
     },
     title: {
         fontSize: theme.fontSize.xxl,
@@ -149,79 +168,74 @@ const styles = StyleSheet.create({
         fontFamily: 'monospace',
         marginTop: 2,
     },
-    headerRight: {
-        alignItems: 'flex-end',
-        gap: theme.spacing.sm,
+    refreshBtn: {
+        padding: 8,
     },
-    count: {
-        fontSize: theme.fontSize.xs,
-        color: theme.colors.textMuted,
-    },
-    clearBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        paddingVertical: 4,
-        paddingHorizontal: theme.spacing.sm,
-        borderRadius: theme.borderRadius.sm,
-        borderWidth: 1,
-        borderColor: theme.colors.error,
-    },
-    clearText: {
-        fontSize: theme.fontSize.sm,
-        color: theme.colors.error,
-        fontWeight: theme.fontWeight.medium,
-    },
-    listContent: {
-        padding: theme.spacing.md,
-        paddingBottom: 32,
-    },
-    row: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        paddingVertical: theme.spacing.xs,
-    },
-    rowIcon: {
-        marginTop: 2,
-        marginRight: theme.spacing.sm,
-    },
-    rowBody: {
-        flex: 1,
-    },
-    rowTime: {
-        fontSize: 11,
-        fontFamily: 'monospace',
-        marginBottom: 2,
-    },
-    rowLevel: {
-        fontWeight: theme.fontWeight.bold,
-    },
-    rowMessage: {
-        fontSize: theme.fontSize.sm,
-        fontFamily: 'monospace',
-        lineHeight: 18,
-    },
-    separator: {
-        height: 1,
-        backgroundColor: theme.colors.border,
-        opacity: 0.4,
-    },
-    empty: {
+    centerContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        padding: theme.spacing.xxl,
-        gap: theme.spacing.md,
+        padding: theme.spacing.xl,
+    },
+    filtersContainer: {
+        padding: theme.spacing.md,
+        backgroundColor: theme.colors.background,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
+    },
+    filterTitle: {
+        fontSize: theme.fontSize.xs,
+        color: theme.colors.textMuted,
+        marginBottom: theme.spacing.sm,
+        textTransform: 'uppercase',
+        fontWeight: 'bold',
+    },
+    chipsRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: theme.spacing.sm,
+    },
+    chip: {
+        paddingHorizontal: theme.spacing.md,
+        paddingVertical: 6,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.background,
+    },
+    chipActive: {
+        backgroundColor: theme.colors.text,
+        borderColor: theme.colors.text,
+    },
+    chipText: {
+        fontSize: theme.fontSize.xs,
+        fontWeight: theme.fontWeight.bold,
+        color: theme.colors.textMuted,
+    },
+    chipTextActive: {
+        color: '#FFFFFF',
+    },
+    listContent: {
+        padding: theme.spacing.md,
+        paddingBottom: 100,
     },
     emptyText: {
-        fontSize: theme.fontSize.lg,
-        fontWeight: theme.fontWeight.semibold,
-        color: theme.colors.textSecondary,
-    },
-    emptyHint: {
-        fontSize: theme.fontSize.sm,
+        marginTop: theme.spacing.md,
+        fontSize: theme.fontSize.md,
         color: theme.colors.textMuted,
         textAlign: 'center',
-        lineHeight: 20,
     },
+    dateHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing.sm,
+        paddingVertical: theme.spacing.sm,
+        marginBottom: theme.spacing.sm,
+        marginTop: theme.spacing.md,
+    },
+    dateHeaderText: {
+        fontSize: theme.fontSize.md,
+        fontWeight: theme.fontWeight.bold,
+        color: theme.colors.text,
+    }
 });

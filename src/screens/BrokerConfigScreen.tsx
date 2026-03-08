@@ -73,7 +73,7 @@ export const BrokerConfigScreen: React.FC<Props> = ({ navigation }) => {
                         <TouchableOpacity
                             style={styles.quickConfigButton}
                             onPress={() => {
-                                setBrokerUrl('ws://broker.hivemq.com');
+                                setBrokerUrl('ws://broker.hivemq.com/mqtt');
                                 setPort('8000');
                                 Alert.alert('Configurado', 'Configuração do HiveMQ (WebSocket) aplicada!');
                             }}
@@ -83,7 +83,7 @@ export const BrokerConfigScreen: React.FC<Props> = ({ navigation }) => {
                         <TouchableOpacity
                             style={[styles.quickConfigButton, { marginLeft: 10 }]}
                             onPress={() => {
-                                setBrokerUrl('ws://test.mosquitto.org');
+                                setBrokerUrl('ws://test.mosquitto.org/mqtt');
                                 setPort('8080');
                                 Alert.alert('Configurado', 'Configuração do Mosquitto (WebSocket) aplicada!');
                             }}
@@ -141,9 +141,9 @@ export const BrokerConfigScreen: React.FC<Props> = ({ navigation }) => {
                     <Text style={styles.helpTitle}>
                         <MaterialCommunityIcons name="lightbulb-outline" size={24} color={theme.colors.text} /> Importante (React Native)</Text>
                     <Text style={styles.helpText}>
-                        Este aplicativo usa WebSockets. Não use portas MQTT padrão (1883).{'\n'}
-                        • HiveMQ: ws://broker.hivemq.com (Porta 8000){'\n'}
-                        • Mosquitto: ws://test.mosquitto.org (Porta 8080)
+                        Este aplicativo usa WebSockets. Não use portas MQTT padrão (1883). O caminho `/mqtt` no final da URL geralmente é obrigatório.{'\n'}
+                        • HiveMQ: ws://broker.hivemq.com/mqtt (Porta 8000){'\n'}
+                        • Mosquitto: ws://test.mosquitto.org/mqtt (Porta 8080)
                     </Text>
                 </View>
 

@@ -83,7 +83,16 @@ export const PumpsScreen: React.FC<Props> = ({ navigation }) => {
             />
 
             <View style={styles.footer}>
-                <Button title="➕ Adicionar Bomba" onPress={() => navigation.navigate('PumpForm', {})} />
+                <Button
+                    title="➕ Adicionar Bomba"
+                    onPress={() => {
+                        if (!isConnected) {
+                            Alert.alert('Sem conexão', 'Conecte ao broker MQTT antes de adicionar uma bomba.');
+                            return;
+                        }
+                        navigation.navigate('PumpForm', {});
+                    }}
+                />
             </View>
         </View>
     );

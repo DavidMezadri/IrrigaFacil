@@ -1,8 +1,9 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { mqttService } from '../services/mqttService';
 import { useApp } from './AppContext';
 import { MQTTConfig, Schedule, NodeSyncPayload, LogEntry, LogLevel } from '../types';
 import { parseSensorDataMessage, parseCommandResponse } from '../utils/messageFormatter';
+import { dbService, LogCategory } from '../services/dbService';
 
 export type SyncStatus = 'idle' | 'pending' | 'done' | 'error';
 
@@ -25,6 +26,8 @@ interface MQTTContextType {
     publishGetAll: () => Promise<void>;
     subscribeToSensor: (topic: string) => Promise<void>;
     subscribeToDeviceStatus: (topic: string) => Promise<void>;
+    publishDeleteAllGpios: () => Promise<void>;
+    publishDeleteAllSchedules: () => Promise<void>;
 }
 
 const MQTTContext = createContext<MQTTContextType | undefined>(undefined);
@@ -53,13 +56,12 @@ export const MQTTProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 const payload = parsed.payload ?? {};
 
                 // Accept partial payloads: gpios-only OR schedules-only
-                const partialData: NodeSyncPayload = {
-                    gpios: Array.isArray(payload.gpios) ? payload.gpios : [],
-                    schedules: Array.isArray(payload.schedules) ? payload.schedules : [],
-                };
+                const partialData: NodeSyncPayload = {};
+                if (Array.isArray(payload.gpios)) partialData.gpios = payload.gpios;
+                if (Array.isArray(payload.schedules)) partialData.schedules = payload.schedules;
 
-                // Only dispatch if there is something useful
-                if (partialData.gpios.length > 0 || partialData.schedules.length > 0) {
+                // Only dispatch if there is something useful (even if empty arrays)
+                if (partialData.gpios !== undefined || partialData.schedules !== undefined) {
                     dispatch({
                         type: 'SYNC_FROM_NODE',
                         payload: { farmId: selectedFarm.id, data: partialData },
@@ -67,7 +69,7 @@ export const MQTTProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     setSyncStatus('done');
                     setTimeout(() => setSyncStatus('idle'), 3000);
                     console.log('[MQTT] SYNC_FROM_NODE dispatched — gpios:',
-                        partialData.gpios.length, 'schedules:', partialData.schedules.length);
+                        partialData.gpios?.length ?? 0, 'schedules:', partialData.schedules?.length ?? 0);
                 }
                 return;
             }
@@ -76,12 +78,23 @@ export const MQTTProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             if (selectedFarm?.mqttLogTopic && topic === selectedFarm.mqttLogTopic) {
                 let level: LogLevel = 'info';
                 let text = message;
+                let category: LogCategory = 'MQTT';
+
                 if (parsed) {
                     text = parsed.message ?? parsed.msg ?? parsed.log ?? message;
+
                     if (['info', 'warn', 'error', 'debug'].includes(parsed.level)) {
+                        level = parsed.level === 'debug' ? 'info' : parsed.level as LogLevel;
+                    }
+                    if (['INFO', 'WARN', 'ERROR', 'SUCCESS'].includes(parsed.level)) {
                         level = parsed.level as LogLevel;
                     }
+
+                    if (parsed.category && ['MQTT', 'SYSTEM', 'USER_ACTION', 'AUTOMATION'].includes(parsed.category)) {
+                        category = parsed.category as LogCategory;
+                    }
                 }
+
                 const entry: LogEntry = {
                     id: `${Date.now()}-${Math.random()}`,
                     timestamp: new Date().toISOString(),
@@ -89,7 +102,38 @@ export const MQTTProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     message: text,
                     topic,
                 };
+
+                // Dispatch to volatile store (AsyncStorage redux simulation)
                 dispatch({ type: 'ADD_LOG_ENTRY', payload: entry });
+
+                // Persist to the SQLite structural database for fast queries
+                dbService.insertLog(selectedFarm.id, level === 'info' ? 'INFO' : (level === 'warn' ? 'WARN' : (level === 'error' ? 'ERROR' : 'INFO')), category, text)
+                    .catch(e => console.error("Falha silenciosa ao gravar log no Sqlite:", e));
+
+                // ── Auto-toggle off UI buttons when timer ends ───────────────
+                // Regex matches: "Timer encerrado: sector 'Setor1' desligado (nó 2)"
+                const timerEndRegex = /Timer encerrado: (pump|sector) '([^']+)' desligado/;
+                const match = text.match(timerEndRegex);
+
+                if (match) {
+                    const equipType = match[1]; // 'pump' or 'sector'
+                    const equipName = match[2]; // e.g. 'Setor1'
+
+                    if (equipType === 'pump') {
+                        const pump = state.pumps.find(p => p.name === equipName && p.farmId === selectedFarm.id);
+                        if (pump) {
+                            dispatch({ type: 'UPDATE_PUMP_STATUS', payload: { id: pump.id, status: 'off' } });
+                            console.log(`[MQTT Auto-parser] Toggled OFF Pump UI: ${equipName}`);
+                        }
+                    } else if (equipType === 'sector') {
+                        const sector = state.sectors.find(s => s.name === equipName && s.farmId === selectedFarm.id);
+                        if (sector) {
+                            dispatch({ type: 'UPDATE_SECTOR_STATUS', payload: { id: sector.id, status: 'off' } });
+                            console.log(`[MQTT Auto-parser] Toggled OFF Sector UI: ${equipName}`);
+                        }
+                    }
+                }
+
                 return;
             }
 
@@ -138,6 +182,11 @@ export const MQTTProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
     }, [state.sensors, state.pumps, state.sectors, state.farms, state.selectedFarmId, dispatch]);
 
+    // Bootstrap cleanup task on mount
+    useEffect(() => {
+        dbService.clearOldLogs(7).catch(e => console.warn("Failed to clear old logs", e));
+    }, []);
+
     // Auto-connect when broker config is available
     useEffect(() => {
         if (state.brokerConfig) {
@@ -148,6 +197,27 @@ export const MQTTProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             disconnect();
         }
     }, [state.brokerConfig]);
+
+    // Auto-reconnect every 5 s when disconnected
+    const isReconnectingRef = useRef(false);
+    useEffect(() => {
+        if (state.mqttConnected || !state.brokerConfig) return;
+
+        const intervalId = setInterval(async () => {
+            if (isReconnectingRef.current) return;
+            isReconnectingRef.current = true;
+            console.log('[MQTT] Attempting auto-reconnect...');
+            try {
+                await connect(state.brokerConfig!);
+            } catch (e) {
+                console.warn('[MQTT] Auto-reconnect failed:', e);
+            } finally {
+                isReconnectingRef.current = false;
+            }
+        }, 5000);
+
+        return () => clearInterval(intervalId);
+    }, [state.mqttConnected, state.brokerConfig]);
 
     // Subscribe to farm topic + log topic
     useEffect(() => {
@@ -292,6 +362,70 @@ export const MQTTProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     /**
+     * Send deleteAll for GPIOs
+     */
+    const publishDeleteAllGpios = async (): Promise<void> => {
+        const selectedFarm = state.farms.find((f) => f.id === state.selectedFarmId);
+        if (!selectedFarm) throw new Error('No farm selected');
+        if (!mqttService.isConnected()) throw new Error('MQTT not connected');
+
+        const topic = selectedFarm.mqttTopic;
+        const farmName = selectedFarm.name;
+
+        const message = {
+            farmId: farmName,
+            type: 'command',
+            action: 'deleteAll',
+            timestamp: getTimestamp(),
+            payload: {
+                nodeId: 1,
+                type: '',
+                equipament: '',
+                state: '',
+                start: '',
+                stop: ''
+            }
+        };
+        await mqttService.publish(topic, JSON.stringify(message));
+        console.log('[MQTT] deleteAll GPIOs sent');
+    };
+
+    /**
+     * Send deleteAll for Schedules
+     */
+    const publishDeleteAllSchedules = async (): Promise<void> => {
+        const selectedFarm = state.farms.find((f) => f.id === state.selectedFarmId);
+        if (!selectedFarm) throw new Error('No farm selected');
+        if (!mqttService.isConnected()) throw new Error('MQTT not connected');
+
+        const topic = selectedFarm.mqttTopic;
+        const farmName = selectedFarm.name;
+
+        const message = {
+            farmId: farmName,
+            type: 'schedule',
+            action: 'deleteAll',
+            timestamp: getTimestamp(),
+            payload: {
+                scheduleId: '',
+                enabled: true,
+                actions: [
+                    {
+                        nodeId: 1,
+                        type: '',
+                        equipament: '',
+                        state: '',
+                        start: '',
+                        stop: ''
+                    }
+                ]
+            }
+        };
+        await mqttService.publish(topic, JSON.stringify(message));
+        console.log('[MQTT] deleteAll Schedules sent');
+    };
+
+    /**
      * Format timestamp as DD-MM-YYYYTHH:MM
      */
     const getTimestamp = (): string => {
@@ -366,6 +500,8 @@ export const MQTTProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 publishSchedule,
                 publishDeleteSchedule,
                 publishGetAll,
+                publishDeleteAllGpios,
+                publishDeleteAllSchedules,
                 subscribeToSensor,
                 subscribeToDeviceStatus,
             }}

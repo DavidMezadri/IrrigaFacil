@@ -175,66 +175,80 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
             // Upsert pumps & sectors from node gpios
             let pumps = [...state.pumps];
             let sectors = [...state.sectors];
+            let schedules = [...state.schedules];
 
-            for (const gpio of data.gpios) {
-                if (gpio.type === 'pump') {
-                    const existing = pumps.find((p) => p.name === gpio.equipament && p.farmId === farmId);
-                    if (existing) {
-                        pumps = pumps.map((p) =>
-                            p.id === existing.id ? { ...p, nodeId: gpio.nodeId, gpioPin: gpio.pin, updatedAt: now } : p
-                        );
-                    } else {
-                        pumps = [...pumps, {
-                            id: generateId(),
-                            farmId,
-                            name: gpio.equipament,
-                            status: 'unknown' as const,
-                            nodeId: gpio.nodeId,
-                            gpioPin: gpio.pin,
-                            createdAt: now,
-                            updatedAt: now,
-                        }];
-                    }
-                } else if (gpio.type === 'sector') {
-                    const existing = sectors.find((s) => s.name === gpio.equipament && s.farmId === farmId);
-                    if (existing) {
-                        sectors = sectors.map((s) =>
-                            s.id === existing.id ? { ...s, nodeId: gpio.nodeId, gpioPin: gpio.pin, updatedAt: now } : s
-                        );
-                    } else {
-                        sectors = [...sectors, {
-                            id: generateId(),
-                            farmId,
-                            name: gpio.equipament,
-                            status: 'unknown' as const,
-                            nodeId: gpio.nodeId,
-                            gpioPin: gpio.pin,
-                            createdAt: now,
-                            updatedAt: now,
-                        }];
+            if (data.gpios !== undefined) {
+                // Delete pumps and sectors from this farm that are not in the new gpios list
+                const incomingPumpKeys = new Set(data.gpios.filter(g => g.type === 'pump').map(g => g.equipament));
+                const incomingSectorKeys = new Set(data.gpios.filter(g => g.type === 'sector').map(g => g.equipament));
+
+                pumps = pumps.filter(p => p.farmId !== farmId || incomingPumpKeys.has(p.name));
+                sectors = sectors.filter(s => s.farmId !== farmId || incomingSectorKeys.has(s.name));
+
+                for (const gpio of data.gpios) {
+                    if (gpio.type === 'pump') {
+                        const existing = pumps.find((p) => p.name === gpio.equipament && p.farmId === farmId);
+                        if (existing) {
+                            pumps = pumps.map((p) =>
+                                p.id === existing.id ? { ...p, nodeId: gpio.nodeId, gpioPin: gpio.pin, updatedAt: now } : p
+                            );
+                        } else {
+                            pumps = [...pumps, {
+                                id: generateId(),
+                                farmId,
+                                name: gpio.equipament,
+                                status: 'unknown' as const,
+                                nodeId: gpio.nodeId,
+                                gpioPin: gpio.pin,
+                                createdAt: now,
+                                updatedAt: now,
+                            }];
+                        }
+                    } else if (gpio.type === 'sector') {
+                        const existing = sectors.find((s) => s.name === gpio.equipament && s.farmId === farmId);
+                        if (existing) {
+                            sectors = sectors.map((s) =>
+                                s.id === existing.id ? { ...s, nodeId: gpio.nodeId, gpioPin: gpio.pin, updatedAt: now } : s
+                            );
+                        } else {
+                            sectors = [...sectors, {
+                                id: generateId(),
+                                farmId,
+                                name: gpio.equipament,
+                                status: 'unknown' as const,
+                                nodeId: gpio.nodeId,
+                                gpioPin: gpio.pin,
+                                createdAt: now,
+                                updatedAt: now,
+                            }];
+                        }
                     }
                 }
             }
 
             // Upsert schedules from node
-            let schedules = [...state.schedules];
-            for (const ns of data.schedules) {
-                const existing = schedules.find((s) => s.scheduleId === ns.scheduleId);
-                if (existing) {
-                    schedules = schedules.map((s) =>
-                        s.scheduleId === ns.scheduleId
-                            ? { ...s, enabled: ns.enabled, actions: ns.actions, updatedAt: now }
-                            : s
-                    );
-                } else {
-                    schedules = [...schedules, {
-                        scheduleId: ns.scheduleId,
-                        farmId,
-                        enabled: ns.enabled,
-                        actions: ns.actions,
-                        createdAt: now,
-                        updatedAt: now,
-                    }];
+            if (data.schedules !== undefined) {
+                const incomingSchedKeys = new Set(data.schedules.map(s => s.scheduleId));
+                schedules = schedules.filter(s => s.farmId !== farmId || incomingSchedKeys.has(s.scheduleId));
+
+                for (const ns of data.schedules) {
+                    const existing = schedules.find((s) => s.scheduleId === ns.scheduleId && s.farmId === farmId);
+                    if (existing) {
+                        schedules = schedules.map((s) =>
+                            s.scheduleId === ns.scheduleId && s.farmId === farmId
+                                ? { ...s, enabled: ns.enabled, actions: ns.actions, updatedAt: now }
+                                : s
+                        );
+                    } else {
+                        schedules = [...schedules, {
+                            scheduleId: ns.scheduleId,
+                            farmId,
+                            enabled: ns.enabled,
+                            actions: ns.actions,
+                            createdAt: now,
+                            updatedAt: now,
+                        }];
+                    }
                 }
             }
 
